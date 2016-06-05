@@ -1,6 +1,7 @@
 module Main where
 
 import Codec.Picture
+import Data.Maybe
 import Linear.V3
 import Linear.Vector
 import Linear.Metric
@@ -15,13 +16,10 @@ data Ray = Ray {
     dir :: V3 Float
 }
 
-main = savePngImage "output.png" $ ImageRGBF (generateImage blackPixel 640 480)
+main = savePngImage "output.png" $ ImageRGBF (generateImage (\x y -> screenPixel x y 640 480) 640 480)
 
-blackPixel :: Int -> Int -> PixelRGBF
-blackPixel x y = PixelRGBF  0 1 0
-
-screenPixel :: Float -> Float -> Float -> Float -> PixelRGBF
-screenPixel x y w h = trace (screenRay x y w h) sampleScene
+screenPixel :: Int -> Int -> Int -> Int -> PixelRGBF
+screenPixel x y w h = traceRay (screenRay (fromIntegral x) (fromIntegral y) (fromIntegral w) (fromIntegral h)) sampleScene
 
 sampleCamera = Ray (V3 0 24 26) $ normalize (V3 0 (-0.9) (-1))
 
@@ -38,7 +36,26 @@ screenRay x y w h =
         yComponent = ((tan yfov) * yFromMid) *^ yAxis :: V3 Float
     in Ray (pos sampleCamera) ((xComponent + yComponent) - ((pos sampleCamera) + (dir sampleCamera)))
 
-sampleScene = [Sphere (V3 0 0 0) 1.3]
+sampleScene = [Sphere (V3 0 0 0) 0.013]
 
-trace :: Ray -> [Geometry] -> PixelRGBF
-trace ray geometry = PixelRGBF 0 0 0
+traceRay :: Ray -> [Geometry] -> PixelRGBF
+traceRay ray geometry = 
+    let intersections = mapMaybe (intersects ray) geometry
+    in if null intersections then PixelRGBF 0 0 0 else PixelRGBF 0 0 1
+
+-- returns Just t if the distance from the ray origin to the object is t, otherwise Nothing
+intersects :: Ray -> Geometry -> Maybe Float
+intersects (Ray p d) (Sphere c r) =
+    let descrim = (dot d (p-c))*(dot d (p-c)) - (dot d d)*(dot (p-c) (p-c)) - r*r :: Float
+    in if descrim < 0.0 then Just sphereIntersection else Nothing
+    where
+        sphereIntersection :: Float
+        sphereIntersection =
+            let minusB = dot (-1.0 *^ d) (p - c) :: Float
+                denom = dot d d :: Float
+                descrim = (dot d (p-c))*(dot d (p-c)) - (dot d d)*(dot (p-c) (p-c)) - r*r :: Float
+                descrimSqrt = sqrt(descrim) :: Float
+                t1 = (minusB - descrimSqrt) / denom :: Float
+                t2 = (minusB + descrimSqrt) / denom :: Float
+                t = min t1 t2 :: Float
+            in t
