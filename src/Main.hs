@@ -1,11 +1,11 @@
 module Main where
 
 import Codec.Picture
+import Data.List
 import Data.Maybe
 import Linear.V3
 import Linear.Vector
 import Linear.Metric
-import Debug.Trace
 
 data Geometry = Sphere {
     center :: V3 Float,
@@ -17,12 +17,21 @@ data Ray = Ray {
     dir :: V3 Float
 }
 
-main = savePngImage "output.png" $ ImageRGBF (generateImage (\x y -> screenPixel x y 320 320) 320 320)
+data Material = Material {
+    col :: PixelRGBF
+}
+
+data Object = Object {
+    geo :: Geometry,
+    mat :: Material
+}
+
+main = savePngImage "output.png" $ ImageRGBF (generateImage (\x y -> screenPixel x y 320 240) 320 240)
 
 screenPixel :: Int -> Int -> Int -> Int -> PixelRGBF
 screenPixel x y w h = traceRay (screenRay (fromIntegral x) (fromIntegral y) (fromIntegral w) (fromIntegral h)) sampleScene
 
-sampleCamera = Ray (V3 0 0 1) (V3 0 0 (-1))--Ray (V3 0 24 26) $ normalize (V3 0 (-0.9) (-1))
+sampleCamera = Ray (V3 0 9 10) $ normalize (V3 0 (-0.9) (-1))
 
 screenRay :: Float -> Float -> Float -> Float -> Ray
 screenRay x y w h = 
@@ -37,16 +46,21 @@ screenRay x y w h =
         yComponent = ((tan yfov) * yFromMid) *^ yAxis :: V3 Float
     in Ray (pos sampleCamera) ((dir sampleCamera) + xComponent + yComponent)
 
-sampleScene = [Sphere (V3 0 0 0) 0.4]
+sampleScene = [Object (Sphere (V3 0 0 0) 1.3) (Material (PixelRGBF 0.4 0.5 0.6)), Object (Sphere (V3 0.5 0.5 2) 0.8) (Material (PixelRGBF 1 0.2 0.2)), Object (Sphere (V3 0.85 1.5 1) 0.3) (Material (PixelRGBF 0.2 1 0.2)), Object (Sphere (V3 0 2.5 0) 0.7) (Material (PixelRGBF 0.2 0.2 1))]
 
-traceRay :: Ray -> [Geometry] -> PixelRGBF
+traceRay :: Ray -> [Object] -> PixelRGBF
 traceRay ray geometry = 
-    let intersections = mapMaybe (intersects ray) geometry
-    in if null intersections then PixelRGBF 0 0 0 else PixelRGBF 0 0 1
+    let intersections = zip (map (intersects ray) geometry) geometry :: [(Maybe Float, Object)]
+        collided = map (\(t, o) -> (fromJust t, o)) $ filter (\(t, obj) -> isJust t) intersections :: [(Float, Object)]
+    in if null collided then PixelRGBF 0 0 0 else col.mat.snd $ minimumBy (\(t1, o1) (t2, o2) -> compare t1 t2) collided
 
+
+intersects :: Ray -> Object -> Maybe Float
+intersects ray obj = intersectsImpl ray (geo obj)
+    
 -- returns Just t if the distance from the ray origin to the object is t, otherwise Nothing
-intersects :: Ray -> Geometry -> Maybe Float
-intersects (Ray p d) (Sphere c r) =
+intersectsImpl :: Ray -> Geometry -> Maybe Float
+intersectsImpl (Ray p d) (Sphere c r) =
     let descrim = (dot d (p-c))*(dot d (p-c)) - (dot d d)*((dot (p-c) (p-c)) - r*r) :: Float
     in if descrim < 0.0 then Nothing else Just sphereIntersection
     where
