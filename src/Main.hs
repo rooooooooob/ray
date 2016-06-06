@@ -32,7 +32,7 @@ instance Eq Object where
 main = savePngImage "output.png" $ ImageRGBF (generateImage (\x y -> screenPixel x y 1280 720) 1280 720)
 
 screenPixel :: Int -> Int -> Int -> Int -> PixelRGBF
-screenPixel x y w h = traceRay (screenRay (fromIntegral x) (fromIntegral y) (fromIntegral w) (fromIntegral h)) sampleScene (PointLight (V3 0 5 0) 9 (PixelRGBF 1 1 1)) 3 --(PixelRGBF 0.18 1.08 1.62))
+screenPixel x y w h = traceRay (screenRay (fromIntegral x) (fromIntegral y) (fromIntegral w) (fromIntegral h)) sampleScene [(PointLight (V3 (-5) 0 3) 9 (PixelRGBF 1.5 0.6 0)), (PointLight (V3 0 1.5 1.5) 4 (PixelRGBF 0.18 1.08 1.62))] 3 --(PixelRGBF 0.18 1.08 1.62))
 
 sampleCamera = Ray (V3 0 6 7) $ normalize (V3 0 (-0.6) (-0.7))
 
@@ -68,7 +68,7 @@ intersectsObjects ray objects =
        then Nothing
        else Just $ minimumBy (\(t1, o1) (t2, o2) -> compare t1 t2) collided
 
-traceRay :: Ray -> [Object] -> Light -> Int -> PixelRGBF
+traceRay :: Ray -> [Object] -> [Light] -> Int -> PixelRGBF
 traceRay ray objects lights depth = 
     let hit = intersectsObjects ray objects
     in if isJust hit
@@ -76,19 +76,30 @@ traceRay ray objects lights depth =
             in addcc (mixcs (col.mat $ o) 0.05) (onCollide ray ((pos ray) + ((dir ray) ^* t)) o objects lights depth)
        else PixelRGBF 0 0 0
 
-onCollide :: Ray -> V3 Float -> Object -> [Object] -> Light -> Int -> PixelRGBF
+onCollide :: Ray -> V3 Float -> Object -> [Object] -> [Light] -> Int -> PixelRGBF
 onCollide ray contactPos obj objects lights depth = 
-    let snorm = surfaceNorm (geo obj) contactPos :: V3 Float
-        toLight = Ray (contactPos + 0.01 *^ snorm) $ normalize $ (lpos lights) - contactPos :: Ray
-        hit = intersectsObjects toLight objects
-        distToLight = distance (lpos lights) contactPos
-        distContrib = 1 - (min 1 (max 0 (distToLight / (lrad lights))))
-        base = mixcs (mixcc (col.mat $ obj) (lcol lights)) (((max 0 $ dot snorm (dir toLight))) * distContrib)
+    let base = foldl combineMaybeCols Nothing lights
         refRay = Ray (contactPos + 0.01 *^ snorm) $ normalize $ (dir ray) - (project snorm (dir ray)) ^* 2
         refcol = mixcs (traceRay refRay objects lights (depth - 1)) (ref.mat $ obj)
-    in if isJust hit 
-        then PixelRGBF 0 0 0
-        else (if depth > 0 then addcc base refcol else base)
+    in if isNothing base 
+       then PixelRGBF 0 0 0
+       else (if depth > 0 then addcc (fromJust base) refcol else (fromJust base))
+    where snorm = surfaceNorm (geo obj) contactPos :: V3 Float
+          combineMaybeCols :: Maybe PixelRGBF -> Light -> Maybe PixelRGBF
+          combineMaybeCols (Just acc) light =
+              let res = lightContrib contactPos snorm obj objects light
+              in Just $ if isJust res then addcc acc (fromJust res) else acc
+          combineMaybeCols Nothing light = lightContrib contactPos snorm obj objects light
+
+lightContrib :: V3 Float -> V3 Float -> Object -> [Object] -> Light -> Maybe PixelRGBF
+lightContrib spos snorm obj objects (PointLight lpos lrad lcol) =
+    let toLight = Ray (spos + 0.01 *^ snorm) $ normalize $ lpos - spos :: Ray
+        hit = intersectsObjects toLight objects
+        distToLight = distance lpos spos
+        distContrib = 1 - (min 1 (max 0 (distToLight / lrad)))
+    in if isJust hit
+       then Nothing
+       else Just $ mixcs (mixcc (col.mat $ obj) lcol) (((max 0 $ dot snorm (dir toLight))) * distContrib)
 
 surfaceNorm :: Geometry -> V3  Float -> V3 Float
 surfaceNorm (Sphere c r) p = normalize $ p - c
