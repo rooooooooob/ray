@@ -15,7 +15,8 @@ data Ray = Ray {
     dir :: V3 Float
 }
 data Material = Material {
-    col :: PixelRGBF
+    col :: PixelRGBF,
+    ref :: Float
 }
 data Object = Object {
     geo :: Geometry,
@@ -31,7 +32,7 @@ instance Eq Object where
 main = savePngImage "output.png" $ ImageRGBF (generateImage (\x y -> screenPixel x y 1280 720) 1280 720)
 
 screenPixel :: Int -> Int -> Int -> Int -> PixelRGBF
-screenPixel x y w h = traceRay (screenRay (fromIntegral x) (fromIntegral y) (fromIntegral w) (fromIntegral h)) sampleScene (PointLight (V3 0 5 0) 9 (PixelRGBF 1 1 1)) --(PixelRGBF 0.18 1.08 1.62))
+screenPixel x y w h = traceRay (screenRay (fromIntegral x) (fromIntegral y) (fromIntegral w) (fromIntegral h)) sampleScene (PointLight (V3 0 5 0) 9 (PixelRGBF 1 1 1)) 3 --(PixelRGBF 0.18 1.08 1.62))
 
 sampleCamera = Ray (V3 0 6 7) $ normalize (V3 0 (-0.6) (-0.7))
 
@@ -48,7 +49,7 @@ screenRay x y w h =
         yComponent = ((tan yfov) * yFromMid) *^ yAxis :: V3 Float
     in Ray (pos sampleCamera) ((dir sampleCamera) + xComponent + yComponent)
 
-sampleScene = [Object (Sphere (V3 0 0 0) 1.3) (Material (PixelRGBF 0.4 0.5 0.6)), Object (Sphere (V3 0.5 0.5 2) 0.8) (Material (PixelRGBF 1 0.2 0.2)), Object (Sphere (V3 0.85 1.5 1) 0.3) (Material (PixelRGBF 0.2 1 0.2)), Object (Sphere (V3 0 2 0) 0.4) (Material (PixelRGBF 0.2 0.2 1))]
+sampleScene = [Object (Sphere (V3 0 0 0) 1.3) (Material (PixelRGBF 0.4 0.5 0.6) 1.1), Object (Sphere (V3 0.5 0.5 2) 0.8) (Material (PixelRGBF 1 0.2 0.2) 0), Object (Sphere (V3 0.85 1.5 1) 0.3) (Material (PixelRGBF 0.2 1 0.2) 0.1), Object (Sphere (V3 0 2 0) 0.4) (Material (PixelRGBF 0.2 0.2 1) 0.8)]
 
 mixcc :: PixelRGBF -> PixelRGBF -> PixelRGBF
 mixcc (PixelRGBF ra ga ba) (PixelRGBF rb gb bb) = PixelRGBF (ra*rb) (ga*gb) (ba*bb)
@@ -67,24 +68,27 @@ intersectsObjects ray objects =
        then Nothing
        else Just $ minimumBy (\(t1, o1) (t2, o2) -> compare t1 t2) collided
 
-traceRay :: Ray -> [Object] -> Light -> PixelRGBF
-traceRay ray objects lights = 
+traceRay :: Ray -> [Object] -> Light -> Int -> PixelRGBF
+traceRay ray objects lights depth = 
     let hit = intersectsObjects ray objects
     in if isJust hit
        then let (t, o) = fromJust hit
-            in addcc (mixcs (col.mat $ o) 0.05) (onCollide ray ((pos ray) + ((dir ray) ^* t)) o objects lights)
+            in addcc (mixcs (col.mat $ o) 0.05) (onCollide ray ((pos ray) + ((dir ray) ^* t)) o objects lights depth)
        else PixelRGBF 0 0 0
 
-onCollide :: Ray -> V3 Float -> Object -> [Object] -> Light -> PixelRGBF
-onCollide ray contactPos obj objects lights = 
+onCollide :: Ray -> V3 Float -> Object -> [Object] -> Light -> Int -> PixelRGBF
+onCollide ray contactPos obj objects lights depth = 
     let snorm = surfaceNorm (geo obj) contactPos :: V3 Float
         toLight = Ray (contactPos + 0.01 *^ snorm) $ normalize $ (lpos lights) - contactPos :: Ray
         hit = intersectsObjects toLight objects
         distToLight = distance (lpos lights) contactPos
         distContrib = 1 - (min 1 (max 0 (distToLight / (lrad lights))))
+        base = mixcs (mixcc (col.mat $ obj) (lcol lights)) (((max 0 $ dot snorm (dir toLight))) * distContrib)
+        refRay = Ray (contactPos + 0.01 *^ snorm) $ normalize $ (dir ray) - (project snorm (dir ray)) ^* 2
+        refcol = mixcs (traceRay refRay objects lights (depth - 1)) (ref.mat $ obj)
     in if isJust hit 
         then PixelRGBF 0 0 0
-        else mixcs (mixcc (col.mat $ obj) (lcol lights)) (((max 0 $ dot snorm (dir toLight))) * distContrib) 
+        else (if depth > 0 then addcc base refcol else base)
 
 surfaceNorm :: Geometry -> V3  Float -> V3 Float
 surfaceNorm (Sphere c r) p = normalize $ p - c
