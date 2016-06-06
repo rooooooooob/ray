@@ -26,15 +26,20 @@ data Light = PointLight {
     lpos :: V3 Float,
     lrad :: Float,
     lcol :: PixelRGBF
+} | DirectionalLight {
+    ldir :: V3 Float,
+    lcol :: PixelRGBF
 }
 instance Eq Object where
     x == y = (center.geo) x == (center.geo) y
 main = savePngImage "output.png" $ ImageRGBF (generateImage (\x y -> screenPixel x y 1280 720) 1280 720)
 
 screenPixel :: Int -> Int -> Int -> Int -> PixelRGBF
-screenPixel x y w h = traceRay (screenRay (fromIntegral x) (fromIntegral y) (fromIntegral w) (fromIntegral h)) sampleScene [(PointLight (V3 (-5) 0 3) 9 (PixelRGBF 1.5 0.6 0)), (PointLight (V3 0 1.5 1.5) 4 (PixelRGBF 0.18 1.08 1.62))] 3 --(PixelRGBF 0.18 1.08 1.62))
+screenPixel x y w h = traceRay (screenRay (fromIntegral x) (fromIntegral y) (fromIntegral w) (fromIntegral h)) sampleScene sampleLights 3 --(PixelRGBF 0.18 1.08 1.62))
 
 sampleCamera = Ray (V3 0 6 7) $ normalize (V3 0 (-0.6) (-0.7))
+sampleScene = [Object (Sphere (V3 0 0 0) 1.3) (Material (PixelRGBF 0.4 0.5 0.6) 1.1), Object (Sphere (V3 0.5 0.5 2) 0.8) (Material (PixelRGBF 1 0.2 0.2) 0), Object (Sphere (V3 0.85 1.5 1) 0.3) (Material (PixelRGBF 0.2 1 0.2) 0.1), Object (Sphere (V3 0 2 0) 0.4) (Material (PixelRGBF 0.2 0.2 1) 0.8)]
+sampleLights = [(PointLight (V3 (-5) 0 3) 9 (PixelRGBF 1.5 0.6 0)), (PointLight (V3 0 1.5 1.5) 4 (PixelRGBF 0.18 1.08 1.62)), (DirectionalLight (V3 0.3 (-1) 0) (PixelRGBF 0.2 0.2 0.2))]
 
 screenRay :: Float -> Float -> Float -> Float -> Ray
 screenRay x y w h = 
@@ -48,8 +53,6 @@ screenRay x y w h =
         xComponent = ((tan xfov) * xFromMid) *^ xAxis :: V3 Float
         yComponent = ((tan yfov) * yFromMid) *^ yAxis :: V3 Float
     in Ray (pos sampleCamera) ((dir sampleCamera) + xComponent + yComponent)
-
-sampleScene = [Object (Sphere (V3 0 0 0) 1.3) (Material (PixelRGBF 0.4 0.5 0.6) 1.1), Object (Sphere (V3 0.5 0.5 2) 0.8) (Material (PixelRGBF 1 0.2 0.2) 0), Object (Sphere (V3 0.85 1.5 1) 0.3) (Material (PixelRGBF 0.2 1 0.2) 0.1), Object (Sphere (V3 0 2 0) 0.4) (Material (PixelRGBF 0.2 0.2 1) 0.8)]
 
 mixcc :: PixelRGBF -> PixelRGBF -> PixelRGBF
 mixcc (PixelRGBF ra ga ba) (PixelRGBF rb gb bb) = PixelRGBF (ra*rb) (ga*gb) (ba*bb)
@@ -100,6 +103,12 @@ lightContrib spos snorm obj objects (PointLight lpos lrad lcol) =
     in if isJust hit
        then Nothing
        else Just $ mixcs (mixcc (col.mat $ obj) lcol) (((max 0 $ dot snorm (dir toLight))) * distContrib)
+lightContrib spos snorm obj objects (DirectionalLight ldir lcol) =
+    let toLight = Ray (spos + 0.01 *^ snorm) $ normalize $ (-1) *^ ldir :: Ray
+        hit = intersectsObjects toLight objects
+    in if isJust hit
+       then Nothing
+       else Just $ mixcs (mixcc (col.mat $ obj) lcol) (max 0 $ dot snorm (dir toLight))
 
 surfaceNorm :: Geometry -> V3  Float -> V3 Float
 surfaceNorm (Sphere c r) p = normalize $ p - c
