@@ -19,6 +19,6 @@ executable ray
   main-is:             Main.hs
   -- other-modules:       
   other-extensions:    CPP, MultiParamTypeClasses, TypeSynonymInstances, FlexibleContexts, TypeFamilies, TupleSections, FlexibleInstances, ScopedTypeVariables, FunctionalDependencies, Rank2Types, BangPatterns, DeriveDataTypeable, RankNTypes, GADTs, ExistentialQuantification, StandaloneDeriving, TypeOperators, GeneralizedNewtypeDeriving, OverloadedStrings
-  build-depends:       base >=4.9 && <4.10, bytestring >=0.10 && <0.11, vector >=0.11 && <0.12, primitive >=0.6 && <0.7, zlib >=0.6 && <0.7, binary >=0.8 && <0.9, containers >=0.5 && <0.6, transformers >=0.5 && <0.6, JuicyPixels >= 3.2.7.1, linear >= 1.20.5
+  build-depends:       base >=4.9 && <4.10, bytestring >=0.10 && <0.11, vector >=0.11 && <0.12, primitive >=0.6 && <0.7, zlib >=0.6 && <0.7, binary >=0.8 && <0.9, containers >=0.5 && <0.6, transformers >=0.5 && <0.6, JuicyPixels >= 3.2.7.1, linear >= 1.20.5, random >= 1.1
   hs-source-dirs:      src
   default-language:    Haskell2010
