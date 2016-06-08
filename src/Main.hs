@@ -44,15 +44,18 @@ data Light = PointLight {
 instance Eq Object where
     x == y = (center.geo) x == (center.geo) y
 
-main = savePngImage "output.png" $ ImageRGBF (generateImage (\x y -> screenPixel x y 1280 720) 1280 720)
+main = savePngImage "output.png" $ ImageRGBF (generateImage (\x y -> antialiasedScreenPixel (zip [-0.4, 0, 0.4] [-0.4, 0, 0.4]) (fromIntegral x) (fromIntegral y) 1280 720) 1280 720)
 
-screenPixel :: Int -> Int -> Int -> Int -> PixelRGBF
-screenPixel x y w h = traceRay (screenRay (fromIntegral x) (fromIntegral y) (fromIntegral w) (fromIntegral h)) sampleScene sampleLights 3
+antialiasedScreenPixel :: [(Float, Float)] -> Float -> Float -> Int -> Int -> PixelRGBF
+antialiasedScreenPixel offsets x y w h = mixcs (foldl1 addcc [(screenPixel (x + ox) (y + oy) w h) | (ox, oy) <- offsets]) (1.0 / fromIntegral (length offsets))
+
+screenPixel :: Float -> Float -> Int -> Int -> PixelRGBF
+screenPixel x y w h = traceRay (screenRay x y (fromIntegral w) (fromIntegral h)) sampleScene sampleLights 3
 
 sampleCamera = Ray (V3 0 (6) (7)) $ normalize (V3 0 (-0.6) (-0.7))
 sampleScene = addRandomSpheres 32 (mkStdGen 42) (Material (PixelRGBF 0.5 0.55 0.7) 0.2 2 0.05 0.02 1337) $
-    addRandomSpheres 32 (mkStdGen 23) (Material (PixelRGBF 0.5 0.75 1) 3.5 1 0.05 0.7 320)
-    [ Object (Sphere (V3 0 0 0) 1.3) (Material (PixelRGBF 0.3 0.3 0.3) 0.3 2.5 0.005 0.2 2560)
+    addRandomSpheres 32 (mkStdGen 23) (Material (PixelRGBF 0.5 0.75 1) 1 1 0.05 0.7 320)
+    [ Object (Sphere (V3 0 0 0) 1.3) (Material (PixelRGBF 0.3 0.3 0.3) 0.3 1.5 0.005 0.2 2560)
     , Object (Sphere (V3 0.5 0.5 2) 0.8) (Material (PixelRGBF 1 0.2 0.2) 0.3 1 1 0 0)
     , Object (Sphere (V3 0.85 1.5 1) 0.3) (Material (PixelRGBF 0.2 1 0.2) 0.1 1 1 0 0)
     , Object (Sphere (V3 0 2 0) 0.4) (Material (PixelRGBF 0.2 0.2 1) 0.8 1 0.4 0 500)
