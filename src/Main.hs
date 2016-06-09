@@ -138,22 +138,21 @@ refractTrace ray contactPos enterNorm obj objects lights =
           refractRay n1 n2 snorm iray = ((n1 / n2)*(dot snorm iray) - (sqrt (1 - ((n1 / n2)*(n1 / n2))*(1 - (dot snorm iray)*(dot snorm iray)))))*^snorm - (n1 / n2)*^iray
 
 lightContrib :: V3 Float -> V3 Float -> V3 Float -> Object -> [Object] -> Light -> Maybe PixelRGBF
-lightContrib iray spos snorm obj objects (PointLight lpos lrad lcol) =
-    let toLight = Ray (spos + 0.01 *^ snorm) $ normalize $ lpos - spos :: Ray
-        hit = intersectsObjects toLight objects
-        distToLight = distance lpos spos
-        distContrib = 1 - (min 1 (max 0 (distToLight / lrad)))
-        diffuse = mixcs (mixcc (col.mat $ obj) lcol) $ (mdif.mat $ obj)*(((max 0 $ dot snorm (dir toLight))) * distContrib)
-        specular = mixcs (mixcc (col.mat $ obj) lcol) $ distContrib*(mspec.mat $ obj)*(max 0 $ dot snorm $ normalize $ iray + (dir toLight)) ** (mspec.mat $ obj)
-    in if isJust hit
-       then Nothing
-       else Just $ addcc diffuse specular
-lightContrib iray spos snorm obj objects (DirectionalLight ldir lcol) =
-    let toLight = Ray (spos + 0.01 *^ snorm) $ normalize $ (-1) *^ ldir :: Ray
-        hit = intersectsObjects toLight objects
-    in if isJust hit
-       then Nothing
-       else Just $ mixcs (mixcc (col.mat $ obj) lcol) (max 0 $ dot snorm (dir toLight))
+lightContrib iray spos snorm obj objects light = contribution
+    where lightSpecificStuff :: Light -> (V3 Float, Float, Float)
+          lightSpecificStuff (PointLight lpos lrad lcol) =
+              let distToLight = distance lpos spos
+                  distContrib = 1 - (min 1 $ distToLight / lrad)
+              in (normalize $ lpos - spos, distContrib, distToLight)
+          lightSpecificStuff (DirectionalLight ldir lcol) = (normalize $ (-1) *^ ldir, 1, read "Infinity")
+          (toLight, intensity, dist) = lightSpecificStuff light
+          hit = intersectsObjects (Ray (spos + 0.01 *^ snorm) toLight) objects
+          (t, _, _) = fromJust hit
+          contribution = if isNothing hit
+                            then Just $ mixcs (addcc (diffuse $ lcol light) (specular $ lcol light)) intensity
+                            else Nothing
+          diffuse lcol = mixcs (mixcc (col.mat $ obj) lcol) $ (mdif.mat $ obj)*(max 0 $ dot snorm toLight)
+          specular lcol = mixcs (mixcc (col.mat $ obj) lcol) $ (mspec.mat $ obj)*(max 0 $ dot snorm $ normalize $ iray + toLight) ** (mspec.mat $ obj)
 
 -- returns Just t if the distance from the ray origin to the object is t, otherwise Nothing
 intersects :: Ray -> Geometry -> Maybe (Float, V3 Float)
