@@ -44,6 +44,8 @@ data Light = PointLight {
 instance Eq Object where
     x == y = (center.geo) x == (center.geo) y
 
+black = PixelRGBF 0 0 0
+
 main = savePngImage "output.png" $ ImageRGBF (generateImage (\x y -> antialiasedScreenPixel (zip [0] [0]) (fromIntegral x) (fromIntegral y) 800 600) 800 600)
 
 antialiasedScreenPixel :: [(Float, Float)] -> Float -> Float -> Int -> Int -> PixelRGBF
@@ -97,76 +99,64 @@ addcc (PixelRGBF ra ga ba) (PixelRGBF rb gb bb) = PixelRGBF (ra+rb) (ga+gb) (ba+
 
 intersectsObjects :: Ray -> [Object] -> Maybe (Float, V3 Float, Object)
 intersectsObjects ray objects =
-    let intersections = zip (map ((intersects ray) . geo) objects) objects :: [(Maybe (Float, V3 Float), Object)]
-        collided = map (\(hit, o) -> (fst$fromJust hit, snd$fromJust hit, o)) $ filter (\(hit, obj) -> isJust hit) intersections :: [(Float, V3 Float, Object)]
-    in if null collided
+    let intersections = mapMaybe (intersects ray) objects :: [(Float, V3 Float, Object)]
+    in if null intersections
        then Nothing
-       else Just $ minimumBy (\(t1, n1, o1) (t2, n2, o2) -> compare t1 t2) collided
+       else Just $ minimumBy (\(t1, n1, o1) (t2, n2, o2) -> compare t1 t2) intersections
 
 traceRay :: Ray -> [Object] -> [Light] -> Int -> PixelRGBF
 traceRay ray objects lights depth = case intersectsObjects ray objects of
     Just (t, n, o) -> addcc (mixcs (col.mat $ o) 0.1) (onCollide ray ((pos ray) + ((dir ray) ^* t)) n o objects lights depth)
-    Nothing -> PixelRGBF 0 0 0
-
-blackOr :: Bool -> PixelRGBF -> PixelRGBF
-blackOr cond def = if cond then def else PixelRGBF 0 0 0
+    Nothing -> black
 
 onCollide :: Ray -> V3 Float -> V3 Float -> Object -> [Object] -> [Light] -> Int -> PixelRGBF
-onCollide ray contactPos snorm obj objects lights depth = 
-    let base = foldl combineMaybeCols Nothing lights
-        reflectRay = Ray (contactPos + 0.01 *^ snorm) $ normalize $ (dir ray) - (project snorm (dir ray)) ^* 2
-        reflectCol = blackOr (depth > 0 && (reflect.mat $ obj) > 0) $ mixcs (traceRay reflectRay objects lights (depth - 1)) (reflect.mat $ obj)
-        refractCol = blackOr (depth > 0 && (refract.mat $ obj) > 1) $ (refractTrace ray contactPos snorm obj objects lights)
-    in if isNothing base
-       then PixelRGBF 0 0 0
-       else addcc (addcc (fromJust base) reflectCol) refractCol
-    where combineMaybeCols :: Maybe PixelRGBF -> Light -> Maybe PixelRGBF
-          combineMaybeCols (Just acc) light =
-              let res = lightContrib (-1*^(dir ray)) contactPos snorm obj objects light
-              in Just $ if isJust res then addcc acc (fromJust res) else acc
-          combineMaybeCols Nothing light = lightContrib (-1*^(dir ray)) contactPos snorm obj objects light
+onCollide ray contactPos snorm obj objects lights depth = base `addcc` reflectCol `addcc` refractCol
+    where base = foldl (\c light -> addcc c $ lightContrib (-1*^(dir ray)) contactPos snorm obj objects light) black lights
+          reflectRay = Ray (contactPos + 0.01 *^ snorm) $ normalize $ (dir ray) - (project snorm (dir ray)) ^* 2
+          reflectCol = if depth > 0 && (reflect.mat $ obj) > 0
+                          then mixcs (traceRay reflectRay objects lights (depth - 1)) (reflect.mat $ obj)
+                          else black
+          refractCol = if depth > 0 && (refract.mat $ obj) > 1
+                          then refractTrace ray contactPos snorm obj objects lights
+                          else black
 
 refractTrace :: Ray -> V3 Float -> V3 Float -> Object -> [Object] -> [Light] -> PixelRGBF
-refractTrace ray contactPos enterNorm obj objects lights =
-    let enterRay = Ray (contactPos - 0.01 *^ enterNorm) $ refractRay 1 (refract.mat $ obj) enterNorm ((-1) *^ (dir ray)) :: Ray
-        (exitT, returnedNorm) = fromJust $ intersects enterRay $ geo obj
-        exitNorm = -1.0 *^ returnedNorm--(surfaceNorm (geo obj) exitPos) :: V3 Float
-        exitPos = (pos enterRay) + (dir enterRay) ^* exitT
-        exitRay = Ray (exitPos - 0.01 *^exitNorm) $ refractRay (refract.mat $ obj) 1 exitNorm ((-1) *^ (dir enterRay)) :: Ray
-    in traceRay exitRay objects lights 0
-    where refractRay :: Float -> Float -> V3 Float -> V3 Float -> V3 Float
+refractTrace ray contactPos enterNorm obj objects lights = traceRay exitRay objects lights 0
+    where enterRay = Ray (contactPos - 0.01 *^ enterNorm) $ refractRay 1 (refract.mat $ obj) enterNorm ((-1) *^ (dir ray)) :: Ray
+          (exitT, exitNorm, _) = fromJust $ intersects enterRay obj
+          exitPos = (pos enterRay) + (dir enterRay) ^* exitT
+          exitRay = Ray (exitPos + 0.01 *^exitNorm) $ refractRay (refract.mat $ obj) 1 (-1*^exitNorm) ((-1) *^ (dir enterRay)) :: Ray 
+          refractRay :: Float -> Float -> V3 Float -> V3 Float -> V3 Float
           refractRay n1 n2 snorm iray = ((n1 / n2)*(dot snorm iray) - (sqrt (1 - ((n1 / n2)*(n1 / n2))*(1 - (dot snorm iray)*(dot snorm iray)))))*^snorm - (n1 / n2)*^iray
 
-lightContrib :: V3 Float -> V3 Float -> V3 Float -> Object -> [Object] -> Light -> Maybe PixelRGBF
-lightContrib iray spos snorm obj objects light = contribution
-    where lightSpecificStuff :: Light -> (V3 Float, Float, Float)
-          lightSpecificStuff (PointLight lpos lrad lcol) =
-              let distToLight = distance lpos spos
-                  distContrib = 1 - (min 1 $ distToLight / lrad)
-              in (normalize $ lpos - spos, distContrib, distToLight)
-          lightSpecificStuff (DirectionalLight ldir lcol) = (normalize $ (-1) *^ ldir, 1, read "Infinity")
-          (toLight, intensity, dist) = lightSpecificStuff light
-          hit = intersectsObjects (Ray (spos + 0.01 *^ snorm) toLight) objects
-          (t, _, _) = fromJust hit
-          contribution = if isNothing hit
-                            then Just $ mixcs (addcc (diffuse $ lcol light) (specular $ lcol light)) intensity
-                            else Nothing
-          diffuse lcol = mixcs (mixcc (col.mat $ obj) lcol) $ (mdif.mat $ obj)*(max 0 $ dot snorm toLight)
-          specular lcol = mixcs (mixcc (col.mat $ obj) lcol) $ (mspec.mat $ obj)*(max 0 $ dot snorm $ normalize $ iray + toLight) ** (mspec.mat $ obj)
+lightContrib :: V3 Float -> V3 Float -> V3 Float -> Object -> [Object] -> Light -> PixelRGBF
+lightContrib iray spos snorm obj objects light = 
+    let lightSpecificStuff :: Light -> (V3 Float, Float, Float)
+        lightSpecificStuff (PointLight lpos lrad lcol) =
+            let distToLight = distance lpos spos
+                distContrib = 1 - (min 1 $ distToLight / lrad)
+            in (normalize $ lpos - spos, distContrib, distToLight)
+        lightSpecificStuff (DirectionalLight ldir lcol) = (normalize $ (-1) *^ ldir, 1, read "Infinity")
+        (toLight, intensity, dist) = lightSpecificStuff light
+        hit = intersectsObjects (Ray (spos + 0.01 *^ snorm) toLight) objects
+        (t, _, _) = fromJust hit
+        diffuse lcol = mixcs (mixcc (col.mat $ obj) lcol) $ (mdif.mat $ obj)*(max 0 $ dot snorm toLight)
+        specular lcol = mixcs (mixcc (col.mat $ obj) lcol) $ (mspec.mat $ obj)*(max 0 $ dot snorm $ normalize $ iray + toLight) ** (mspec.mat $ obj)
+    in if isNothing hit
+       then mixcs (addcc (diffuse $ lcol light) (specular $ lcol light)) intensity
+       else black
 
 -- returns Just t if the distance from the ray origin to the object is t, otherwise Nothing
-intersects :: Ray -> Geometry -> Maybe (Float, V3 Float)
-intersects (Ray p d) (Sphere c r) =
-    let descrim = (dot d (p-c))*(dot d (p-c)) - (dot d d)*((dot (p-c) (p-c)) - r*r) :: Float
-    in if descrim < 0.0 then Nothing else sphereIntersection
-    where
-        sphereIntersection :: Maybe (Float, V3 Float)
-        sphereIntersection =
-            let minusB = -dot d (p - c) :: Float
-                denom = dot d d :: Float
-                descrim = (dot d (p-c))*(dot d (p-c)) - (dot d d)*((dot (p-c) (p-c)) - r*r) :: Float
-                descrimSqrt = sqrt descrim :: Float
-                t1 = (minusB - descrimSqrt) / denom :: Float
-                t2 = (minusB + descrimSqrt) / denom :: Float
-                t = if min t1 t2 >= 0 then min t1 t2 else max t1 t2 :: Float
-            in if t >= 0 then Just (t, normalize $ (p + d^*t) - c) else Nothing
+intersects :: Ray -> Object -> Maybe (Float, V3 Float, Object)
+intersects (Ray p d) obj = case geo obj of
+    (Sphere c r) ->
+        let minusB = -dot d (p - c) :: Float
+            denom = dot d d :: Float
+            descrim = (dot d (p-c))*(dot d (p-c)) - (dot d d)*((dot (p-c) (p-c)) - r*r) :: Float
+            descrimSqrt = sqrt descrim :: Float
+            t1 = (minusB - descrimSqrt) / denom :: Float
+            t2 = (minusB + descrimSqrt) / denom :: Float
+            t = if min t1 t2 >= 0 then min t1 t2 else max t1 t2 :: Float
+        in if descrim < 0 || t < 0
+           then Nothing
+           else Just (t, normalize $ (p + d^*t) - c, obj)
