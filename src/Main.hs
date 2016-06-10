@@ -1,8 +1,10 @@
 module Main where
 
 import Codec.Picture
+import Control.Monad
 import Data.List
 import Data.Maybe
+import Data.Ord
 import Linear.V3
 import Linear.Vector
 import Linear.Metric
@@ -13,6 +15,9 @@ data Geometry = Sphere {
     rad :: Float
 } | Triangle {
     a,  b, c :: V3 Float
+} | Mesh {
+    vertices :: [V3 Float],
+    faces :: [[Int]]
 }
 
 data Ray = Ray {
@@ -56,15 +61,12 @@ screenPixel x y w h = traceRay (screenRay x y (fromIntegral w) (fromIntegral h))
 sampleCamera = Ray (V3 0 (6) (7)) $ normalize (V3 0 (-0.6) (-0.7))--Ray (0.6*^(V3 40 (15) (-70))) $ normalize (V3 (-0.4) (-0.15) (0.7))
 sampleScene = addRandomSpheres 0 (mkStdGen 42) (Material (PixelRGBF 0.5 0.55 0.7) 0 2 0.05 0.02 1337) $
     addRandomSpheres 0 (mkStdGen 23) (Material (PixelRGBF 0.5 0.75 1) 1 1 0.05 0.7 320)
-    [ Object (Sphere (V3 0 0 0) 1.3) (Material (PixelRGBF 0.3 0.3 0.3) 0.3 1.5 0.005 0.2 2560)
+    [ Object (Sphere (V3 0 0 0) 1.2) (Material (PixelRGBF 0.3 0.3 0.3) 0.3 1.5 0.005 0.2 2560)
     , Object (Sphere (V3 0.5 0.5 2) 0.8) (Material (PixelRGBF 1 0.2 0.2) 0.3 1 1 0 0)
     , Object (Sphere (V3 0.85 1.5 1) 0.3) (Material (PixelRGBF 0.2 1 0.2) 0.1 1 1 0 0)
     --, Object (Sphere (V3 0 2 0) 0.4) (Material (PixelRGBF 0.2 0.2 1) 0.8 1 0.4 0 500)
     , Object (Sphere (V3 (-2) (-3) (-3)) 1) (Material (PixelRGBF 0.7 0.5 1) 0.5 1 0.1 3 600)
-    , Object (Triangle (V3 (-0.2) 1.3 (-0.2)) (V3 (-0.2) 1.3 0.2) (V3 0 1.6 0)) (Material (PixelRGBF 2 2 0) 0 1 1 0 0)
-    , Object (Triangle (V3 (-0.2) 1.3 0.2) (V3 0.2 1.3 0.2) (V3 0 1.6 0)) (Material (PixelRGBF 2 2 0) 0 1 1 0 0)
-    , Object (Triangle (V3 0.2 1.3 0.2) (V3 0.2 1.3 (-0.2)) (V3 0 1.6 0)) (Material (PixelRGBF 2 2 0) 0 1 1 0 0) ]
-    --, Object (Triangle (V3 0.2 1.3 (-0.2)) (V3 (-0.2) 1.3 (-0.2)) (V3 0 1.6 0)) (Material (PixelRGBF 2 2 0) 0 1 1 0 0) ]
+    , Object (Mesh [(V3 (-0.2) 1.3 (-0.2)), (V3 (-0.2) 1.3 0.2), (V3 0.2 1.3 0.2), (V3 0.2 1.3 (-0.2)), (V3 0 1.6 0)] [[0,1,4], [1,2,4], [2,3,4], [3,0,4]]) (Material (PixelRGBF 2 2 0) 0 1 1 0 0) ]
 sampleLights = [ (PointLight (V3 (-5) 4 5.5) 6 (PixelRGBF 1 0.8 0.3))
     , (PointLight (V3 0 3.5 1.5) 3 (PixelRGBF 0.36 1.08 1.42))
     , (DirectionalLight (V3 0 (-1) 0) (PixelRGBF 1 1 1)) ]
@@ -102,10 +104,15 @@ addcc (PixelRGBF ra ga ba) (PixelRGBF rb gb bb) = PixelRGBF (ra+rb) (ga+gb) (ba+
 
 intersectsObjects :: Ray -> [Object] -> Maybe (Float, V3 Float, Object)
 intersectsObjects ray objects =
-    let intersections = mapMaybe (intersects ray) objects :: [(Float, V3 Float, Object)]
-    in if null intersections
-       then Nothing
-       else Just $ minimumBy (\(t1, n1, o1) (t2, n2, o2) -> compare t1 t2) intersections
+    let fst3 (x, _, _) = x
+        intersection :: Object -> Maybe (Float, V3 Float, Object)
+        intersection obj = case intersects ray $ geo obj of
+            Just (t, n) -> Just (t, n, obj)
+            Nothing -> Nothing
+        intersections = mapMaybe intersection objects
+    in if not $ null intersections
+       then Just $ minimumBy (comparing fst3) intersections
+       else Nothing
 
 traceRay :: Ray -> [Object] -> [Light] -> Int -> PixelRGBF
 traceRay ray objects lights depth = case intersectsObjects ray objects of
@@ -126,7 +133,7 @@ onCollide ray contactPos snorm obj objects lights depth = base `addcc` reflectCo
 refractTrace :: Ray -> V3 Float -> V3 Float -> Object -> [Object] -> [Light] -> PixelRGBF
 refractTrace ray contactPos enterNorm obj objects lights = traceRay exitRay objects lights 0
     where enterRay = Ray (contactPos - 0.01 *^ enterNorm) $ refractRay 1 (refract.mat $ obj) enterNorm ((-1) *^ (dir ray)) :: Ray
-          (exitT, exitNorm, _) = fromJust $ intersects enterRay obj
+          (exitT, exitNorm) = fromJust $ intersects enterRay (geo obj)
           exitPos = (pos enterRay) + (dir enterRay) ^* exitT
           exitRay = Ray (exitPos + 0.01 *^exitNorm) $ refractRay (refract.mat $ obj) 1 (-1*^exitNorm) ((-1) *^ (dir enterRay)) :: Ray 
           refractRay :: Float -> Float -> V3 Float -> V3 Float -> V3 Float
@@ -147,30 +154,39 @@ lightContrib iray spos snorm obj objects light =
        else black
 sign x = if x >= 0 then 1 else -1
 -- returns Just t if the distance from the ray origin to the object is t, otherwise Nothing
-intersects :: Ray -> Object -> Maybe (Float, V3 Float, Object)
-intersects (Ray o d) obj = case geo obj of
-    (Sphere c r) ->
-        let minusB = -dot d (o - c) :: Float
-            denom = dot d d :: Float
-            descrim = (dot d (o-c))*(dot d (o-c)) - (dot d d)*((dot (o-c) (o-c)) - r*r) :: Float
-            descrimSqrt = sqrt descrim :: Float
-            t1 = (minusB - descrimSqrt) / denom :: Float
-            t2 = (minusB + descrimSqrt) / denom :: Float
-            t = if min t1 t2 >= 0 then min t1 t2 else max t1 t2 :: Float
-        in if descrim < 0 || t < 0
-           then Nothing
-           else Just (t, normalize $ (o + d^*t) - c, obj)
-    (Triangle a b c) ->
-        let ab = (b - a)
-            ac = (c - a)
-            n = if dot d (cross ab ac) > 0 then cross ac ab else cross ab ac
-            planetoo = project n (o - a) :: V3 Float
-            costheta = dot (normalize $ (-1.0)*^planetoo) (normalize d) :: Float
-            t = (norm planetoo) / (costheta) :: Float
-            p = o + (t*^d)
-            atest = dot n (cross (b - a) (p - a))
-            btest = dot n (cross (c - b) (p - b))
-            ctest = dot n (cross (a - c) (p - c))--(not ((distance a p) < 0.3) || ((distance b p) < 0.3) || ((distance c p) < 0.3))
-        in if t < 0 || sign atest /= sign btest || sign atest /= sign ctest--(atest < 0 || btest < 0 || ctest < 0)-- && (isNothing $ intersects (Ray o d) (Object (Sphere a 0.03) (Material (PixelRGBF 1 0 0) 0.3 1.5 0.005 0.2 2560))) && (isNothing $ intersects (Ray o d) (Object (Sphere b 0.03) (Material (PixelRGBF 0.3 0.3 0.3) 0.3 1.5 0.005 0.2 2560))) && (isNothing $ intersects (Ray o d) (Object (Sphere c 0.03) (Material (PixelRGBF 0.3 0.3 0.3) 0.3 1.5 0.005 0.2 2560)))
-           then Nothing --trace ("atest = " ++ (show atest) ++ "; btest = " ++ (show btest) ++ "; ctest = " ++ (show ctest)) Nothing
-           else Just (t, normalize n, obj)
+intersects :: Ray -> Geometry -> Maybe (Float, V3 Float)
+intersects (Ray o d) (Sphere c r) =
+    let minusB = -dot d (o - c) :: Float
+        denom = dot d d :: Float
+        descrim = (dot d (o-c))*(dot d (o-c)) - (dot d d)*((dot (o-c) (o-c)) - r*r) :: Float
+        descrimSqrt = sqrt descrim :: Float
+        t1 = (minusB - descrimSqrt) / denom :: Float
+        t2 = (minusB + descrimSqrt) / denom :: Float
+        t = if min t1 t2 >= 0 then min t1 t2 else max t1 t2 :: Float
+    in if descrim < 0 || t < 0
+       then Nothing
+       else Just (t, normalize $ (o + d^*t) - c)
+intersects (Ray o d) (Triangle a b c) =
+    let ab = (b - a)
+        ac = (c - a)
+        n = if dot d (cross ab ac) > 0 then cross ac ab else cross ab ac
+        planetoo = project n (o - a) :: V3 Float
+        costheta = dot (normalize $ (-1.0)*^planetoo) (normalize d) :: Float
+        t = (norm planetoo) / (costheta) :: Float
+        p = o + (t*^d)
+        atest = dot n (cross (b - a) (p - a))
+        btest = dot n (cross (c - b) (p - b))
+        ctest = dot n (cross (a - c) (p - c))
+    in if abs (dot n d) < 0.0001 || t < 0 || sign atest /= sign btest || sign atest /= sign ctest
+       then Nothing
+       else Just (t, normalize n)
+intersects ray (Mesh verts faces) =
+    let anyTri (a:b:c:rest) = case intersects ray (Triangle (verts !! a) (verts !! b) (verts !! c)) of
+            Just hit -> Just hit
+            Nothing -> anyTri (a:c:rest)
+        anyTri _ = Nothing
+        anyFace (f:rest) = case anyTri f of
+            Just hit -> Just hit
+            Nothing -> anyFace rest
+        anyFace [] = Nothing
+    in anyFace faces
