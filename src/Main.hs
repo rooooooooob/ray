@@ -7,12 +7,12 @@ import Linear.V3
 import Linear.Vector
 import Linear.Metric
 import System.Random
-
+import Debug.Trace
 data Geometry = Sphere {
     center :: V3 Float,
     rad :: Float
 } | Triangle {
-    a, b, c :: V3 Float
+    a,  b, c :: V3 Float
 }
 
 data Ray = Ray {
@@ -43,33 +43,31 @@ data Light = PointLight {
     lcol :: PixelRGBF
 }
 
-instance Eq Object where
-    x == y = (center.geo) x == (center.geo) y
-
 black = PixelRGBF 0 0 0
 --[(xo, yo) | xo <- [-0.4, 0, 0.4], yo <- [-0.4, 0, 0.4]]
-main = savePngImage "output.png" $ ImageRGBF (generateImage (\x y -> screenPixel (fromIntegral x) (fromIntegral y) 1280 720) 1280 720)
+main = savePngImage "output.png" $ ImageRGBF (generateImage (\x y -> antialiasedScreenPixel [(xo, yo) | xo <- [-0.25, 0.25], yo <- [-0.25, 0.25]] (fromIntegral x) (fromIntegral y) 1280 720) 1280 720)
 
 antialiasedScreenPixel :: [(Float, Float)] -> Float -> Float -> Int -> Int -> PixelRGBF
 antialiasedScreenPixel offsets x y w h = mixcs (foldl1 addcc [(screenPixel (x + ox) (y + oy) w h) | (ox, oy) <- offsets]) (1.0 / fromIntegral (length offsets))
 
 screenPixel :: Float -> Float -> Int -> Int -> PixelRGBF
-screenPixel x y w h = traceRay (screenRay x y (fromIntegral w) (fromIntegral h)) sampleScene sampleLights 1
+screenPixel x y w h = traceRay (screenRay x y (fromIntegral w) (fromIntegral h)) sampleScene sampleLights 2
 
-sampleCamera = (V3 0 (6) (7)) $ normalize (V3 0 (-0.6) (-0.7))
-sampleScene = addRandomSpheres 32 (mkStdGen 42) (Material (PixelRGBF 0.5 0.55 0.7) 0 2 0.05 0.02 1337) $
-    addRandomSpheres 32 (mkStdGen 23) (Material (PixelRGBF 0.5 0.75 1) 1 1 0.05 0.7 320)
+sampleCamera = Ray (V3 0 (6) (7)) $ normalize (V3 0 (-0.6) (-0.7))--Ray (0.6*^(V3 40 (15) (-70))) $ normalize (V3 (-0.4) (-0.15) (0.7))
+sampleScene = addRandomSpheres 0 (mkStdGen 42) (Material (PixelRGBF 0.5 0.55 0.7) 0 2 0.05 0.02 1337) $
+    addRandomSpheres 0 (mkStdGen 23) (Material (PixelRGBF 0.5 0.75 1) 1 1 0.05 0.7 320)
     [ Object (Sphere (V3 0 0 0) 1.3) (Material (PixelRGBF 0.3 0.3 0.3) 0.3 1.5 0.005 0.2 2560)
     , Object (Sphere (V3 0.5 0.5 2) 0.8) (Material (PixelRGBF 1 0.2 0.2) 0.3 1 1 0 0)
     , Object (Sphere (V3 0.85 1.5 1) 0.3) (Material (PixelRGBF 0.2 1 0.2) 0.1 1 1 0 0)
-    , Object (Sphere (V3 0 2 0) 0.4) (Material (PixelRGBF 0.2 0.2 1) 0.8 1 0.4 0 500)
+    --, Object (Sphere (V3 0 2 0) 0.4) (Material (PixelRGBF 0.2 0.2 1) 0.8 1 0.4 0 500)
     , Object (Sphere (V3 (-2) (-3) (-3)) 1) (Material (PixelRGBF 0.7 0.5 1) 0.5 1 0.1 3 600)
-    , Object (Triangle (V3 (-2) 0 2) (V3 2 0 2) (V3 0 2 0)) (Material (PixelRGBF 1 0.8 0.2) 1 2 1 0 0) ]
-    --, Object (Triangle (V3 (-200) (-20) 200) (V3 (-200) (-20) (-200)) (V3 (-200) (-20) 200)) (Material (PixelRGBF 0.3 1 1) 1 1 1 0 0)
-    --, Object (Triangle (V3 200 (-20) 200) (V3 (-200) (-20) 200) (V3 200 (-20) (-200))) (Material (PixelRGBF 1 0.3 1) 1 1 1 0 0) ]
+    , Object (Triangle (V3 (-0.2) 1.3 (-0.2)) (V3 (-0.2) 1.3 0.2) (V3 0 1.6 0)) (Material (PixelRGBF 2 2 0) 0 1 1 0 0)
+    , Object (Triangle (V3 (-0.2) 1.3 0.2) (V3 0.2 1.3 0.2) (V3 0 1.6 0)) (Material (PixelRGBF 2 2 0) 0 1 1 0 0)
+    , Object (Triangle (V3 0.2 1.3 0.2) (V3 0.2 1.3 (-0.2)) (V3 0 1.6 0)) (Material (PixelRGBF 2 2 0) 0 1 1 0 0) ]
+    --, Object (Triangle (V3 0.2 1.3 (-0.2)) (V3 (-0.2) 1.3 (-0.2)) (V3 0 1.6 0)) (Material (PixelRGBF 2 2 0) 0 1 1 0 0) ]
 sampleLights = [ (PointLight (V3 (-5) 4 5.5) 6 (PixelRGBF 1 0.8 0.3))
     , (PointLight (V3 0 3.5 1.5) 3 (PixelRGBF 0.36 1.08 1.42))
-    , (DirectionalLight (V3 0.2 (-1) 0) (PixelRGBF 0.5 0.5 0.5)) ]
+    , (DirectionalLight (V3 0 (-1) 0) (PixelRGBF 1 1 1)) ]
 
 addRandomSpheres :: RandomGen g => Int -> g -> Material -> [Object] -> [Object]
 addRandomSpheres 0 rng mat objects = objects
@@ -147,7 +145,7 @@ lightContrib iray spos snorm obj objects light =
     in if isNothing $ intersectsObjects (Ray (spos + 0.01 *^ snorm) toLight) objects
        then mixcs (addcc (diffuse $ lcol light) (specular $ lcol light)) intensity
        else black
-
+sign x = if x >= 0 then 1 else -1
 -- returns Just t if the distance from the ray origin to the object is t, otherwise Nothing
 intersects :: Ray -> Object -> Maybe (Float, V3 Float, Object)
 intersects (Ray o d) obj = case geo obj of
@@ -165,13 +163,14 @@ intersects (Ray o d) obj = case geo obj of
     (Triangle a b c) ->
         let ab = (b - a)
             ac = (c - a)
-            n = cross ab ac
-            ndrd = dot n d :: Float
-            t = ((dot n o) + (dot a n))/ndrd :: Float
-            p = o + t*^d
-            atest = cross (b - a) (p - a) 
-            btest = cross (c - b) (p - b) 
-            ctest = cross (a - c) (p - c)
-        in if abs ndrd < 0.01 || t < 0 || (dot n atest) < 0 || (dot n btest) < 0 || (dot n ctest) < 0--) && (isNothing $ intersects (Ray p d) (Object (Sphere a 0.3) (Material (PixelRGBF 1 0 0) 0.3 1.5 0.005 0.2 2560))) && (isNothing $ intersects (Ray p d) (Object (Sphere b 0.3) (Material (PixelRGBF 0.3 0.3 0.3) 0.3 1.5 0.005 0.2 2560))) && (isNothing $ intersects (Ray p d) (Object (Sphere c 0.3) (Material (PixelRGBF 0.3 0.3 0.3) 0.3 1.5 0.005 0.2 2560)))
-           then Nothing
+            n = if dot d (cross ab ac) > 0 then cross ac ab else cross ab ac
+            planetoo = project n (o - a) :: V3 Float
+            costheta = dot (normalize $ (-1.0)*^planetoo) (normalize d) :: Float
+            t = (norm planetoo) / (costheta) :: Float
+            p = o + (t*^d)
+            atest = dot n (cross (b - a) (p - a))
+            btest = dot n (cross (c - b) (p - b))
+            ctest = dot n (cross (a - c) (p - c))--(not ((distance a p) < 0.3) || ((distance b p) < 0.3) || ((distance c p) < 0.3))
+        in if t < 0 || sign atest /= sign btest || sign atest /= sign ctest--(atest < 0 || btest < 0 || ctest < 0)-- && (isNothing $ intersects (Ray o d) (Object (Sphere a 0.03) (Material (PixelRGBF 1 0 0) 0.3 1.5 0.005 0.2 2560))) && (isNothing $ intersects (Ray o d) (Object (Sphere b 0.03) (Material (PixelRGBF 0.3 0.3 0.3) 0.3 1.5 0.005 0.2 2560))) && (isNothing $ intersects (Ray o d) (Object (Sphere c 0.03) (Material (PixelRGBF 0.3 0.3 0.3) 0.3 1.5 0.005 0.2 2560)))
+           then Nothing --trace ("atest = " ++ (show atest) ++ "; btest = " ++ (show btest) ++ "; ctest = " ++ (show ctest)) Nothing
            else Just (t, normalize n, obj)
