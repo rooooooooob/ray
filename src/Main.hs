@@ -1,14 +1,15 @@
 module Main where
-
 import Codec.Picture
 import Control.Monad
 import Data.List
+import Data.List.Split
 import Data.Maybe
 import Data.Ord
 import Linear.V3
 import Linear.Vector
 import Linear.Metric
 import System.Random
+import System.IO
 import Debug.Trace
 data Geometry = Sphere {
     center :: V3 Float,
@@ -19,12 +20,10 @@ data Geometry = Sphere {
     vertices :: [V3 Float],
     faces :: [[Int]]
 }
-
 data Ray = Ray {
     pos :: V3 Float,
     dir :: V3 Float
 }
-
 data Material = Material {
     col :: PixelRGBF,
     reflect :: Float,
@@ -33,12 +32,10 @@ data Material = Material {
     mspec :: Float,
     mshiny :: Float
 }
-
 data Object = Object {
     geo :: Geometry,
     mat :: Material
 }
-
 data Light = PointLight {
     lpos :: V3 Float,
     lrad :: Float,
@@ -54,7 +51,6 @@ main = savePngImage "output.png" $ ImageRGBF (generateImage (\x y -> antialiased
 
 antialiasedScreenPixel :: [(Float, Float)] -> Float -> Float -> Int -> Int -> PixelRGBF
 antialiasedScreenPixel offsets x y w h = mixcs (foldl1 addcc [(screenPixel (x + ox) (y + oy) w h) | (ox, oy) <- offsets]) (1.0 / fromIntegral (length offsets))
-
 screenPixel :: Float -> Float -> Int -> Int -> PixelRGBF
 screenPixel x y w h = traceRay (screenRay x y (fromIntegral w) (fromIntegral h)) sampleScene sampleLights 2
 
@@ -66,7 +62,7 @@ sampleScene = addRandomSpheres 0 (mkStdGen 42) (Material (PixelRGBF 0.5 0.55 0.7
     , Object (Sphere (V3 0.85 1.5 1) 0.3) (Material (PixelRGBF 0.2 1 0.2) 0.1 1 1 0 0)
     --, Object (Sphere (V3 0 2 0) 0.4) (Material (PixelRGBF 0.2 0.2 1) 0.8 1 0.4 0 500)
     , Object (Sphere (V3 (-2) (-3) (-3)) 1) (Material (PixelRGBF 0.7 0.5 1) 0.5 1 0.1 3 600)
-    , Object (Mesh [(V3 (-0.2) 1.3 (-0.2)), (V3 (-0.2) 1.3 0.2), (V3 0.2 1.3 0.2), (V3 0.2 1.3 (-0.2)), (V3 0 1.6 0)] [[0,1,4], [1,2,4], [2,3,4], [3,0,4]]) (Material (PixelRGBF 2 2 0) 0 1 1 0 0) ]
+    , Object (loadObj (lines "v -0.2 1.3 -0.2\nv -0.2 1.3 0.2\nv 0.2 1.3 0.2\nv 0.2 1.3 -0.2\nv 0 1.6 0\nf 1 2 5\nf 2 3 5\nf 3 4 5\nf 4 1 5")) (Material (PixelRGBF 2 2 0) 0 1 1 0 0) ]
 sampleLights = [ (PointLight (V3 (-5) 4 5.5) 6 (PixelRGBF 1 0.8 0.3))
     , (PointLight (V3 0 3.5 1.5) 3 (PixelRGBF 0.36 1.08 1.42))
     , (DirectionalLight (V3 0 (-1) 0) (PixelRGBF 1 1 1)) ]
@@ -190,3 +186,13 @@ intersects ray (Mesh verts faces) =
             Nothing -> anyFace rest
         anyFace [] = Nothing
     in anyFace faces
+
+loadObj :: [String] -> Geometry
+loadObj fileLines = readObjLine fileLines (Mesh [] [])
+    where readObjLine (x:xs) (Mesh verts faces) = case (words x) !! 0 of
+              "v" -> readObjLine xs $ Mesh (verts ++ [V3 (read $ (words x) !! 1) (read $ (words x) !! 2) (read $ (words x) !! 3)]) faces
+              "f" -> let dropped = drop 1 (words x) :: [String]
+                         newface = traceShowId $ map ((+(-1)) . read . head . (splitOn "/")) dropped :: [Int]
+                     in readObjLine xs $ Mesh verts (faces ++ [newface])
+              _ -> Mesh verts faces
+          readObjLine [] mesh = id mesh
