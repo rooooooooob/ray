@@ -46,23 +46,34 @@ data Light = PointLight {
 }
 
 black = PixelRGBF 0 0 0
---[(xo, yo) | xo <- [-0.4, 0, 0.4], yo <- [-0.4, 0, 0.4]]
-main = savePngImage "output.png" $ ImageRGBF (generateImage (\x y -> antialiasedScreenPixel [(xo, yo) | xo <- [-0.25, 0.25], yo <- [-0.25, 0.25]] (fromIntegral x) (fromIntegral y) 1280 720) 1280 720)
 
-antialiasedScreenPixel :: [(Float, Float)] -> Float -> Float -> Int -> Int -> PixelRGBF
-antialiasedScreenPixel offsets x y w h = mixcs (foldl1 addcc [(screenPixel (x + ox) (y + oy) w h) | (ox, oy) <- offsets]) (1.0 / fromIntegral (length offsets))
-screenPixel :: Float -> Float -> Int -> Int -> PixelRGBF
-screenPixel x y w h = traceRay (screenRay x y (fromIntegral w) (fromIntegral h)) sampleScene sampleLights 2
+main = do
+    scene <- dragonScene
+    let aa = [(0, 0)]--[(xo, yo) | xo <- [-0.25, 0.25], yo <- [-0.25, 0.25]]--[(xo, yo) | xo <- [-0.4, 0, 0.4], yo <- [-0.4, 0, 0.4]]
+        render x y = antialiasedScreenPixel aa (fromIntegral x) (fromIntegral y) 1 1 sampleCamera scene sampleLights
+    savePngImage "output.png" $ ImageRGBF (generateImage render 1 1)
 
-sampleCamera = Ray (V3 0 (6) (7)) $ normalize (V3 0 (-0.6) (-0.7))--Ray (0.6*^(V3 40 (15) (-70))) $ normalize (V3 (-0.4) (-0.15) (0.7))
-sampleScene = addRandomSpheres 0 (mkStdGen 42) (Material (PixelRGBF 0.5 0.55 0.7) 0 2 0.05 0.02 1337) $
-    addRandomSpheres 0 (mkStdGen 23) (Material (PixelRGBF 0.5 0.75 1) 1 1 0.05 0.7 320)
-    [ Object (Sphere (V3 0 0 0) 1.2) (Material (PixelRGBF 0.3 0.3 0.3) 0.3 1.5 0.005 0.2 2560)
-    , Object (Sphere (V3 0.5 0.5 2) 0.8) (Material (PixelRGBF 1 0.2 0.2) 0.3 1 1 0 0)
-    , Object (Sphere (V3 0.85 1.5 1) 0.3) (Material (PixelRGBF 0.2 1 0.2) 0.1 1 1 0 0)
-    --, Object (Sphere (V3 0 2 0) 0.4) (Material (PixelRGBF 0.2 0.2 1) 0.8 1 0.4 0 500)
-    , Object (Sphere (V3 (-2) (-3) (-3)) 1) (Material (PixelRGBF 0.7 0.5 1) 0.5 1 0.1 3 600)
-    , Object (loadObj (lines "v -0.2 1.3 -0.2\nv -0.2 1.3 0.2\nv 0.2 1.3 0.2\nv 0.2 1.3 -0.2\nv 0 1.6 0\nf 1 2 5\nf 2 3 5\nf 3 4 5\nf 4 1 5")) (Material (PixelRGBF 2 2 0) 0 1 1 0 0) ]
+antialiasedScreenPixel :: [(Float, Float)] -> Float -> Float -> Int -> Int -> Ray -> [Object] -> [Light] -> PixelRGBF
+antialiasedScreenPixel offsets x y w h camera objects lights = mixcs (foldl1 addcc [(screenPixel (x + ox) (y + oy) w h camera objects lights) | (ox, oy) <- offsets]) (1.0 / fromIntegral (length offsets))
+screenPixel :: Float -> Float -> Int -> Int -> Ray -> [Object] -> [Light] -> PixelRGBF
+screenPixel x y w h camera objects lights = traceRay (screenRay camera x y (fromIntegral w) (fromIntegral h)) objects lights 2
+
+dragonScene = do
+    dragonFile <- lines <$> readFile "dragon.obj"
+    return [Object (loadObj $ filter (not.null) dragonFile) (Material (PixelRGBF 0.2 1 0.7) 0 1 1 100 10000)]
+
+sampleCamera = Ray (V3 0 (12) (14)) $ normalize (V3 0 (-0.6) (-0.7))--Ray (0.6*^(V3 40 (15) (-70))) $ normalize (V3 (-0.4) (-0.15) (0.7))
+sampleScene :: IO [Object]
+sampleScene = do
+    pyramidFile <- lines <$> readFile "pyramid.obj"
+    return $ addRandomSpheres 0 (mkStdGen 42) (Material (PixelRGBF 0.5 0.55 0.7) 0 2 0.05 0.02 1337) $
+           addRandomSpheres 0 (mkStdGen 23) (Material (PixelRGBF 0.5 0.75 1) 1 1 0.05 0.7 320)
+           [ Object (Sphere (V3 0 0 0) 1.2) (Material (PixelRGBF 0.3 0.3 0.3) 0.3 1.5 0.005 0.2 2560)
+           , Object (Sphere (V3 0.5 0.5 2) 0.8) (Material (PixelRGBF 1 0.2 0.2) 0.3 1 1 0 0)
+           , Object (Sphere (V3 0.85 1.5 1) 0.3) (Material (PixelRGBF 0.2 1 0.2) 0.1 1 1 0 0)
+           --, Object (Sphere (V3 0 2 0) 0.4) (Material (PixelRGBF 0.2 0.2 1) 0.8 1 0.4 0 500)
+           , Object (Sphere (V3 (-2) (-3) (-3)) 1) (Material (PixelRGBF 0.7 0.5 1) 0.5 1 0.1 3 600)
+           , Object (loadObj pyramidFile) (Material (PixelRGBF 2 2 0) 0 1 1 0 0) ]
 sampleLights = [ (PointLight (V3 (-5) 4 5.5) 6 (PixelRGBF 1 0.8 0.3))
     , (PointLight (V3 0 3.5 1.5) 3 (PixelRGBF 0.36 1.08 1.42))
     , (DirectionalLight (V3 0 (-1) 0) (PixelRGBF 1 1 1)) ]
@@ -76,18 +87,18 @@ addRandomSpheres n rng mat objects =
         (r, rng5) = randomR (0.05, 0.25) rng4
     in addRandomSpheres (n - 1) rng5 mat $ (Object (Sphere (V3 x y z) r) mat):objects
 
-screenRay :: Float -> Float -> Float -> Float -> Ray
-screenRay x y w h = 
+screenRay :: Ray -> Float -> Float -> Float -> Float -> Ray
+screenRay (Ray pos dir) x y w h =
     let xfov = (pi / 4) :: Float -- 90 degree horizontal fov
         yfov = atan ((tan xfov) * (h / w)) :: Float
         xFromMid = ((x / w)) - 0.5 :: Float
         yFromMid = ((y / h)) - 0.5 :: Float
         up = (V3 0 (-1) 0) :: V3 Float
-        xAxis = normalize (cross up (dir sampleCamera)) :: V3 Float
-        yAxis = normalize (cross (dir sampleCamera) xAxis) :: V3 Float
+        xAxis = normalize $ cross up dir :: V3 Float
+        yAxis = normalize $ cross dir xAxis :: V3 Float
         xComponent = ((tan xfov) * xFromMid) *^ xAxis :: V3 Float
         yComponent = ((tan yfov) * yFromMid) *^ yAxis :: V3 Float
-    in Ray (pos sampleCamera) ((dir sampleCamera) + xComponent + yComponent)
+    in Ray pos (dir + xComponent + yComponent)
 
 mixcc :: PixelRGBF -> PixelRGBF -> PixelRGBF
 mixcc (PixelRGBF ra ga ba) (PixelRGBF rb gb bb) = PixelRGBF (ra*rb) (ga*gb) (ba*bb)
@@ -143,7 +154,7 @@ lightContrib iray spos snorm obj objects light =
                     distContrib = 1 - (min 1 $ distToLight / lrad)
                 in (normalize $ lpos - spos, distContrib, distToLight)
             (DirectionalLight ldir lcol) -> (normalize $ (-1) *^ ldir, 1, read "Infinity")
-        diffuse lcol = mixcs (mixcc (col.mat $ obj) lcol) $ (mdif.mat $ obj)*(max 0 $ dot snorm toLight)
+        diffuse lcol = black--mixcs (mixcc (col.mat $ obj) lcol) $ (mdif.mat $ obj)*(max 0 $ dot snorm toLight)
         specular lcol = mixcs (mixcc (col.mat $ obj) lcol) $ (mspec.mat $ obj)*(max 0 $ dot snorm $ normalize $ iray + toLight) ** (mspec.mat $ obj)
     in if isNothing $ intersectsObjects (Ray (spos + 0.01 *^ snorm) toLight) objects
        then mixcs (addcc (diffuse $ lcol light) (specular $ lcol light)) intensity
@@ -191,8 +202,7 @@ loadObj :: [String] -> Geometry
 loadObj fileLines = readObjLine fileLines (Mesh [] [])
     where readObjLine (x:xs) (Mesh verts faces) = case (words x) !! 0 of
               "v" -> readObjLine xs $ Mesh (verts ++ [V3 (read $ (words x) !! 1) (read $ (words x) !! 2) (read $ (words x) !! 3)]) faces
-              "f" -> let dropped = drop 1 (words x) :: [String]
-                         newface = traceShowId $ map ((+(-1)) . read . head . (splitOn "/")) dropped :: [Int]
+              "f" -> let newface = map ((+(-1)) . read . head . (splitOn "/")) $ drop 1 (words x) :: [Int]
                      in readObjLine xs $ Mesh verts (faces ++ [newface])
-              _ -> Mesh verts faces
+              _ -> readObjLine xs (Mesh verts faces)
           readObjLine [] mesh = id mesh
