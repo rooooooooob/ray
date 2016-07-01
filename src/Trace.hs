@@ -3,6 +3,7 @@ module Trace
 ) where
 
 import Color
+import Collision
 import Lighting
 import Object
 import Ray
@@ -25,18 +26,16 @@ traceRay ray objects lights depth = case intersectsObjects ray objects of
     Nothing -> black
 
 -- assuming a collision with the input Object, gives the colour at the collided location
-onCollide :: Ray       -- ^ Ray that collided with the object
-          -> V3 Float  -- ^ Position the ray collided into the object at
-          -> V3 Float  -- ^ The surface normal at the point of collision
-          -> Float     -- ^ The u-coordinate 
-          -> Float     -- ^ The v-coordinate
-          -> Object    -- ^ The object the ray collided with
-          -> [Object]  -- ^ The other objects in the scene
-          -> [Light]   -- ^ The lights in the scene
-          -> Int       -- ^ The reflection recursion depth (none at 0)
-          -> PixelRGBF -- ^ The colour at the point of collision found (subject to textures, lights, etc)
-onCollide ray contactPos snorm u v obj objects lights depth = base `addcc` reflectCol `addcc` refractCol
-    where tcol = (col $ mat obj) u v
+onCollide :: CollisionInfo -- ^ The collision that happened
+          -> [Object]      -- ^ The other objects in the scene
+          -> [Light]       -- ^ The lights in the scene
+          -> Int           -- ^ The reflection recursion depth (none at 0)
+          -> PixelRGBF     -- ^ The colour at the point of collision found (subject to textures, lights, etc)
+onCollide colInfo  objects lights depth = base `addcc` reflectCol `addcc` refractCol
+    where contactPos = colPos colInfo
+          snorm = colSurfNorm colInfo
+          obj = colobj colInfo
+          tcol = (col $ mat obj) (colU colInfo) (colV colInfo)
           base = foldl (\c light -> addcc c $ lightContrib (-1*^(dir ray)) contactPos snorm tcol obj objects light) black lights
           reflectRay = Ray (contactPos + 0.0001 *^ snorm) $ normalize $ (dir ray) - (project snorm (dir ray)) ^* 2
           reflectCol = if depth > 0 && (reflect.mat $ obj) > 0
@@ -47,15 +46,14 @@ onCollide ray contactPos snorm u v obj objects lights depth = base `addcc` refle
                           else black
 
 -- casts a refraction ray (ie glass, water, etc) through an object (note: assumes closed mesh)
-refractTrace :: Ray       -- ^ The ray that collided with the object
-             -> V3 Float  -- ^ The position the ray collided into the object at
-             -> V3 Float  -- ^ The surface normal at the collision point (entering)
-             -> Object    -- ^ The object to refract through
-             -> [Object]  -- ^ The other objects in the scene
-             -> [Light]   -- ^ The lights in the scene
-             -> PixelRGBF -- ^ The colour found from refracting through the object
-refractTrace ray contactPos enterNorm obj objects lights = traceRay exitRay objects lights 0
-    where enterRay = Ray (contactPos - 0.0001 *^ enterNorm) $ refractRay 1 (refract.mat $ obj) enterNorm ((-1) *^ (dir ray)) :: Ray
+refractTrace :: CollisionInfo -- ^ The collision that we need to refract out from
+             -> [Object]      -- ^ The other objects in the scene
+             -> [Light]       -- ^ The lights in the scene
+             -> PixelRGBF     -- ^ The colour found from refracting through the object
+refractTrace colInfo objects lights = traceRay exitRay objects lights 0
+    where obj = colObj colInfo
+          enterNorm = colSurfNorm colInfo
+          enterRay = Ray ((colPos colInfo) - 0.0001 *^ enterNorm) $ refractRay 1 (refract.mat $ obj) enterNorm ((-1) *^ (dir ray)) :: Ray
           (exitT, exitNorm, _, _) = fromJust $ intersects enterRay (geo obj)
           exitPos = (pos enterRay) + (dir enterRay) ^* exitT
           exitRay = Ray (exitPos + 0.0001 *^exitNorm) $ refractRay (refract.mat $ obj) 1 (-1*^exitNorm) ((-1) *^ (dir enterRay)) :: Ray 
