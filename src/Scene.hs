@@ -16,6 +16,7 @@ import Linear.Vector
 import System.Random
 
 sampleCamera = Ray (V3 0 (4) (6)) $ normalize (V3 0 (-0.5) (-0.7))--Ray (0.6*^(V3 40 (15) (-70))) $ normalize (V3 (-0.4) (-0.15) (0.7))
+
 sampleScene :: IO [Object]
 sampleScene = do
     pyramidFile <- lines <$> readFile "pyramid.obj"
@@ -31,6 +32,7 @@ sampleScene = do
            , Object (Sphere (V3 0 2 0) 0.4) (Material (solidColor $ PixelRGBF 0.2 0.2 1) 0.8 1 0.4 0 500)
            , Object (Sphere (V3 (-2) (-3) (-3)) 1) (Material (textureMap $ toImageRGBF moonTex) 0.5 1 0.1 1 600) ]
            --, Object (loadObj pyramidFile) (Material (solidColor $ PixelRGBF 2 2 0) 0 1 1 0 0) ]
+
 sampleLights = --[ (PointLight (V3 (-5) 4 5.5) 12 (PixelRGBF 4 2 0.1))
     --, (PointLight (V3 0 3.5 1.5) 5 (PixelRGBF 0.72 2.16 2.84))
     [ (DirectionalLight (V3 0 (-1) 0) (PixelRGBF 0.6 0.6 0.6)) ]

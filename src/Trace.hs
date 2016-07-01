@@ -14,12 +14,27 @@ import Linear.Metric
 import Linear.V3
 import Linear.Vector
 
-traceRay :: Ray -> [Object] -> [Light] -> Int -> PixelRGBF
+-- Traces a ray through the given scene
+traceRay :: Ray       -- ^ The ray to trace
+         -> [Object]  -- ^ The objects in the scene
+         -> [Light]   -- ^ The lights in the scene
+         -> Int       -- ^ The recursion depth for reflections/refractions (none at 0)
+         -> PixelRGBF -- ^ The colour at the position of the traced ray
 traceRay ray objects lights depth = case intersectsObjects ray objects of
     Just (t, n, u, v, o) -> addcc (mixcs ((col $ mat o) u v) 0.15) (onCollide ray ((pos ray) + ((dir ray) ^* t)) n u v o objects lights depth)
     Nothing -> black
 
-onCollide :: Ray -> V3 Float -> V3 Float -> Float -> Float -> Object -> [Object] -> [Light] -> Int -> PixelRGBF
+-- assuming a collision with the input Object, gives the colour at the collided location
+onCollide :: Ray       -- ^ Ray that collided with the object
+          -> V3 Float  -- ^ Position the ray collided into the object at
+          -> V3 Float  -- ^ The surface normal at the point of collision
+          -> Float     -- ^ The u-coordinate 
+          -> Float     -- ^ The v-coordinate
+          -> Object    -- ^ The object the ray collided with
+          -> [Object]  -- ^ The other objects in the scene
+          -> [Light]   -- ^ The lights in the scene
+          -> Int       -- ^ The reflection recursion depth (none at 0)
+          -> PixelRGBF -- ^ The colour at the point of collision found (subject to textures, lights, etc)
 onCollide ray contactPos snorm u v obj objects lights depth = base `addcc` reflectCol `addcc` refractCol
     where tcol = (col $ mat obj) u v
           base = foldl (\c light -> addcc c $ lightContrib (-1*^(dir ray)) contactPos snorm tcol obj objects light) black lights
@@ -31,7 +46,14 @@ onCollide ray contactPos snorm u v obj objects lights depth = base `addcc` refle
                           then refractTrace ray contactPos snorm obj objects lights
                           else black
 
-refractTrace :: Ray -> V3 Float -> V3 Float -> Object -> [Object] -> [Light] -> PixelRGBF
+-- casts a refraction ray (ie glass, water, etc) through an object (note: assumes closed mesh)
+refractTrace :: Ray       -- ^ The ray that collided with the object
+             -> V3 Float  -- ^ The position the ray collided into the object at
+             -> V3 Float  -- ^ The surface normal at the collision point (entering)
+             -> Object    -- ^ The object to refract through
+             -> [Object]  -- ^ The other objects in the scene
+             -> [Light]   -- ^ The lights in the scene
+             -> PixelRGBF -- ^ The colour found from refracting through the object
 refractTrace ray contactPos enterNorm obj objects lights = traceRay exitRay objects lights 0
     where enterRay = Ray (contactPos - 0.0001 *^ enterNorm) $ refractRay 1 (refract.mat $ obj) enterNorm ((-1) *^ (dir ray)) :: Ray
           (exitT, exitNorm, _, _) = fromJust $ intersects enterRay (geo obj)

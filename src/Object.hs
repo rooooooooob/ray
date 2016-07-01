@@ -50,6 +50,7 @@ data Object = Object {
     mat :: Material
 }
 
+-- Loads a OBJ format model from the input file
 loadObj :: [String] -> Geometry
 loadObj fileLines = readObjLine fileLines (Mesh [] [])
     where readObjLine (x:xs) (Mesh verts faces) = case (words x) !! 0 of
@@ -59,20 +60,26 @@ loadObj fileLines = readObjLine fileLines (Mesh [] [])
               _ -> readObjLine xs (Mesh verts faces)
           readObjLine [] mesh = id mesh
 
+-- u-v map for a uniform-colour texture
 solidColor :: PixelRGBF -> Float -> Float -> PixelRGBF
 solidColor c _ _ = c
 
+-- u-v map for an image texture
 textureMap :: Image PixelRGBF -> Float -> Float -> PixelRGBF
 textureMap tex u v = if u >= 0 && u < 1 && v >= 0 && v < 1
     then pixelAt tex (floor ((1 - u) *(fromIntegral$imageWidth tex))) (floor ((1 - v) * (fromIntegral$imageHeight tex)))
     else trace ("invalid u-v coordinates: u = " ++ (show u) ++ "; v = " ++ (show v)) black
 
+-- Converts a DynamicImage (that you would get from loading a file) to a PixelRGBF one we can work with
 toImageRGBF :: DynamicImage -> Image PixelRGBF
 toImageRGBF (ImageRGB8 img)    = promoteImage img
 toImageRGBF (ImageRGBF img)    = img
 toImageRGBF (ImageYCbCr8 img)  = promoteImage $ (convertImage img :: Image PixelRGB8)
 
-intersectsObjects :: Ray -> [Object] -> Maybe (Float, V3 Float, Float, Float, Object)
+-- Finds all intersections of a ray through a scene of objects
+intersectsObjects :: Ray           -- ^ The ray to test collision for
+                  -> [Object]      -- ^ All the objects to test collision with
+                  -> Maybe (Float, V3 Float, Float, Float, Object) -- ^ Collision information about which object was hit and where, Nothing if no collisions were found
 intersectsObjects ray objects =
     let fst5 (x, _, _, _, _) = x
         intersection :: Object -> Maybe (Float, V3 Float, Float, Float, Object)
@@ -84,9 +91,10 @@ intersectsObjects ray objects =
        then Just $ minimumBy (comparing fst5) intersections
        else Nothing
 
-sign x = if x >= 0 then 1 else -1
--- returns Just t if the distance from the ray origin to the object is t, otherwise Nothing
-intersects :: Ray -> Geometry -> Maybe (Float, V3 Float, Float, Float)
+-- Tests intersection against a single object
+intersects :: Ray           -- ^ The ray to test collision for
+           -> Geometry      -- ^ The geometry of of the object to test against
+           -> Maybe (Float, V3 Float, Float, Float) -- ^ Collision information about which object was hit and where, Nothing if no collisions were found
 intersects (Ray o d) (Sphere c r) =
     let minusB = -dot d (o - c) :: Float
         denom = dot d d :: Float
@@ -112,6 +120,7 @@ intersects (Ray o d) (Triangle a b c) =
         atest = dot n (cross (b - a) (p - a))
         btest = dot n (cross (c - b) (p - b))
         ctest = dot n (cross (a - c) (p - c))
+        sign x = if x >= 0 then 1 else -1
     in if abs (dot n d) < 0.0001 || t < 0 || sign atest /= sign btest || sign atest /= sign ctest
        then Nothing
        else Just (t, normalize n, 0, 0)--todo add in triangle u-v

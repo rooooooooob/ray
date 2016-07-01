@@ -22,7 +22,15 @@ data Light = PointLight {
     lcol :: PixelRGBF
 }
 
-lightContrib :: V3 Float -> V3 Float -> V3 Float -> PixelRGBF -> Object -> [Object] -> Light -> PixelRGBF
+-- Determines the how the light illuminates the input position/object
+lightContrib :: V3 Float  -- ^ The inverse of the ray that hit the object
+             -> V3 Float  -- ^ The point of collision
+             -> V3 Float  -- ^ The surface normal at the point of collision
+             -> PixelRGBF -- ^ The base colour of the object at the collision point (e.g. texture colour)
+             -> Object    -- ^ The object to illimunate
+             -> [Object]  -- ^ The other objects in the scene
+             -> Light     -- ^ The light to figure out the illumination of
+             -> PixelRGBF -- ^ Colour that the light illuminated
 lightContrib iray spos snorm tcol obj objects light = 
     let (toLight, intensity, dist) = case light of
             (PointLight lpos lrad lcol) ->
