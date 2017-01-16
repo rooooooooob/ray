@@ -1,5 +1,6 @@
 module Collision
 ( CollisionInfo(..)
+, colPos
 , intersectsObjects
 , intersects
 ) where

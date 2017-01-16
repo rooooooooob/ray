@@ -3,6 +3,7 @@ module Lighting
 , lightContrib
 ) where
 
+import Collision
 import Color
 import Object
 import Ray
