@@ -59,12 +59,12 @@ loadObj fileLines = readObjLine fileLines (Mesh [] [])
 
 -- u-v map for a uniform-colour texture
 solidColor :: PixelRGBF -> TextureMap
-solidColor c = \u v -> c
+solidColor c = \u v -> fromSRGB c
 
 -- u-v map for an image texture
 textureMap :: Image PixelRGBF -> TextureMap
 textureMap tex = \u v -> if u >= 0 && u < 1 && v >= 0 && v < 1
-    then pixelAt tex (floor ((1 - u) *(fromIntegral$imageWidth tex))) (floor ((1 - v) * (fromIntegral$imageHeight tex)))
+    then fromSRGB $ pixelAt tex (floor ((1 - u) *(fromIntegral$imageWidth tex))) (floor ((1 - v) * (fromIntegral$imageHeight tex)))
     else trace ("invalid u-v coordinates: u = " ++ (show u) ++ "; v = " ++ (show v)) black
 
 -- Converts a DynamicImage (that you would get from loading a file) to a PixelRGBF one we can work with
